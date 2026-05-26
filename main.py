@@ -1,7 +1,55 @@
 from pprint import pprint
 from transformers import pipeline
+from pydantic import BaseModel, ConfigDict, SerializeAsAny
+from typing import Any, Callable
+
+
 import datetime
 
+class Runnable(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    def invoke(self, data: Any) -> Any:
+        raise NotImplementedError("I am not implemented!")
+    
+    def __or__(self, other:Any)->Any:
+        if isinstance(other, Runnable):
+            return RunnableSequence(first=self,second=other)
+        if callable(other):
+            return RunnableSequence(first=self, second=RunnableLambda(func=other))
+        return NotImplemented
+    
+    def __ror__(self, other: Any) -> Any:
+        if callable(other):
+            return RunnableSequence(
+                first=RunnableLambda(func=other),
+                second=self
+                )
+
+class RunnableLambda(Runnable):
+    func: Callable[[Any], Any]
+    
+    def invoke(self, data:Any) -> Callable:
+        return self.func(data)
+    
+class RunnableSequence(Runnable):
+    first: Runnable
+    second: Runnable
+    def invoke(self, data: Any) -> Any:
+        return self.second.invoke(data)
+
+class ProcessTicket(BaseModel):
+    customer_id: int
+    sentiment: int
+    urgency: int
+    summary: str
+
+class TicketParser(Runnable):
+    name: str = "ticket_parser"
+    
+    def invoke(self, raw_dict: dict) -> ProcessedTicket:
+        return ProcessTicket(**raw_dict)
+    
 class SmolLM:
     def __init__(self, model_name="HuggingFaceTB/SmolLM-135M-Instruct"):
         print("Loading {model_name} into memory (this may take a while)...")
